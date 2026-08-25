@@ -24,7 +24,7 @@ mandatesRouter.post('/initialize', async (req, res) => {
       body: JSON.stringify({
         email: borrower.email,
         channel: 'direct_debit',
-        callback_url: callbackUrl ?? 'https://google.com',
+        callback_url: callbackUrl || 'https://google.com',
         account: {
         number: borrower.bankAccountNumber,
         bank_code: borrower.bankCode
@@ -75,7 +75,7 @@ mandatesRouter.post('/charge-repayment', async (req, res) => {
       },
       body: JSON.stringify({
         email: borrower.email,
-        amount: amount * 100 ?? borrower.debitAmount * 100,
+        amount: amount * 100 || borrower.debitAmount * 100,
         authorization_code: borrower.authCode,
         reference,
         currency: 'NGN',
