@@ -10,11 +10,12 @@
   "author": "Auwal MS",
   "type": "module",
   "main": "src/main.js",
- "scripts": {
+  "scripts": {
     "start": "node --env-file=.env src/main.js",
-    "dev": "node --watch --env-file=.env src/main.js"
+    "dev": "node --watch-path=src --watch --env-file=.env src/main.js"
   },
   "dependencies": {
-    "express": "^4.19.2"
+    "express": "^4.19.2",
+    "lowdb": "^7.0.1"
   }
 }

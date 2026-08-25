@@ -38,13 +38,19 @@ mandatesRouter.post('/initialize', async (req, res) => {
     });
 
     const data = await response.json();
-    if(!response.ok) {
-      return res.status(response.status).json({ error: 'Failed to initialize mandate' });
-    };
-      
-      console.log(data);
+    if (!response.ok) {
+      return res.status(response.status).json({
+        error: data.message || 'Failed to initialize mandate',
+        details: data,
+      });
+    }
+
+    if (data.data?.reference) {
       borrower.reference = data.data.reference;
-      return res.status(response.status).json(data);
+      await db.write();
+    }
+
+    return res.status(response.status).json(data);
    
   } catch (error) {
     return res.status(500).json({ error: error.message });
