@@ -1,0 +1,20 @@
+{
+  "name": "webhook-test",
+  "version": "1.0.0",
+  "description": "demo test for paystack webhook dev experience",
+  "keywords": [
+    "webhook",
+    "tests"
+  ],
+  "license": "MIT",
+  "author": "Auwal MS",
+  "type": "module",
+  "main": "src/main.js",
+ "scripts": {
+    "start": "node --env-file=.env src/main.js",
+    "dev": "node --watch --env-file=.env src/main.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2"
+  }
+}
