@@ -1,115 +1,72 @@
-# Paystack Direct Debit & Webhook Demo
+# webhook-test
 
-A lightweight Node.js demo service simulating a lending engine integrated with **Paystack Direct Debit**. It covers the complete lifecycle: borrower loan onboarding, mandate authorization initialization, secure webhook event processing (with HMAC SHA-512 validation and idempotency guards), and recurring repayment charges.
+A simple Express service to test Paystack Direct Debit mandate setup, webhook handling, and recurring repayment charges.
 
----
+## Setup
 
-## What's Inside
-
-- **ES Modules & Zero Boilerplate**: Built with native Node.js ESM (`"type": "module"`).
-- **Embedded Persistence**: Uses [Lowdb](https://github.com/typicode/lowdb) (`db.json`) so borrowers, mandates, repayments, and webhook logs persist across server restarts.
-- **Paystack Webhook Verification**: Computes and verifies `x-paystack-signature` using HMAC SHA-512 against raw request bodies.
-- **Idempotency**: Prevents double-processing of webhook retries using unique event deduplication and entity guards.
-- **Ready-to-use Postman Collection**: Includes pre-configured requests with automated variable passing and signature generation.
-
----
-
-## Project Structure
-
-```
-├── src/
-│   ├── config.js               # Centralized config loaded from environment
-│   ├── db.js                   # Lowdb setup & helper query methods
-│   ├── main.js                 # Express server bootstrap & route mounting
-│   └── routes/
-│       ├── loans.routes.js     # Borrower & loan onboarding (/loans)
-│       ├── mandates.routes.js  # Mandate init & charging (/mandates)
-│       └── webhooks.routes.js  # Webhook listener & logs (/webhooks)
-├── db.json                     # Local JSON database (auto-generated)
-├── postman_collection.json     # Postman collection for testing
-└── package.json
-```
-
----
-
-## Getting Started
-
-### 1. Requirements
-- Node.js **v20.6.0+** (uses native `--env-file` support)
-- A Paystack account (test keys work fine)
-
-### 2. Installation & Setup
-
+1. Install dependencies:
 ```bash
-# Install dependencies
 npm install
+```
 
-# Set up environment variables
+2. Configure environment:
+```bash
 cp .env.example .env
 ```
 
-Edit your `.env` file with your Paystack secret key:
-
+Add your Paystack test secret key to `.env`:
 ```ini
-PAYSTACK_SECRET_KEY=sk_test_xxxxxxxxxxxxxxxxxxxxxxxxxxxx
+PAYSTACK_SECRET_KEY=sk_test_xxx
 PAYSTACK_BASE_URL=https://api.paystack.co
 PORT=8888
 ```
 
-### 3. Run the Server
-
+3. Start the server:
 ```bash
-# Development (with watch mode)
 npm run dev
-
-# Production
-npm start
 ```
 
-The server will be available at `http://localhost:8888`.
+## How It Works
 
----
+1. **Onboard Borrower**: `POST /loans/onboard` registers a borrower and creates a loan in `PENDING_MANDATE` status.
+2. **Initialize Mandate**: `POST /mandates/initialize` calls Paystack's authorization endpoint and returns the authorization link for the customer.
+3. **Webhook Processing**: `POST /webhooks/listen` verifies Paystack's HMAC SHA-512 signature, saves the event payload to `db.json`, and updates status:
+   - `direct_debit.authorization.created` updates loan status to `APPROVED`.
+   - `direct_debit.authorization.active` updates loan status to `ACTIVE` and saves the reusable `authCode`.
+   - `charge.success` records the repayment.
+4. **Charge Repayment**: `POST /mandates/charge-repayment` triggers a debit using the customer's stored `authCode`.
 
-## Workflow & Endpoints
+## Endpoints
 
-### 1. Onboard Borrower & Loan
-- `POST /loans/onboard`
-- Creates borrower profile and loan in `PENDING_MANDATE` status.
+| Method | Route | Description |
+| --- | --- | --- |
+| `POST` | `/loans/onboard` | Register a borrower and create loan |
+| `POST` | `/mandates/initialize` | Initialize Direct Debit mandate with Paystack |
+| `POST` | `/mandates/charge-repayment` | Charge repayment using stored authorization code |
+| `POST` | `/webhooks/listen` | Webhook receiver for Paystack events |
+| `GET` | `/webhooks/logs` | View all saved webhook events |
 
-### 2. Initialize Direct Debit Mandate
-- `POST /mandates/initialize`
-- Calls Paystack's `/customer/authorization/initialize` endpoint.
-- Returns a `redirect_url` where the customer authorizes the mandate.
-- Saves the mandate `reference` on the borrower record.
+## Testing
 
-### 3. Webhook Listener
-- `POST /webhooks/listen`
-- Verifies Paystack `x-paystack-signature` header.
-- Saves all verified webhooks in `db.json`.
-- `direct_debit.authorization.created`: Links `authCode` to borrower, sets loan to `APPROVED`.
-- `direct_debit.authorization.active`: Activates mandate, sets loan to `ACTIVE`.
-- `charge.success`: Logs repayment record.
-- `GET /webhooks/logs`: Helper endpoint to view all captured webhook payloads.
+A complete Postman collection is included in `postman_collection.json`. Import it into Postman and run the requests in order:
 
-### 4. Charge Repayment
-- `POST /mandates/charge-repayment`
-- Debits borrower's account using their active `authCode` via Paystack's `/transaction/charge_authorization`.
+1. **Onboard Borrower & Loan**: Creates borrower and loan. The test script automatically saves `borrowerId` into collection variables.
+2. **Initialize Mandate**: Calls Paystack and returns authorization URL. The test script automatically captures `mandateReference`.
+3. **Simulate Webhooks** (under `Webhooks (Paystack)` folder):
+   - Run **`Webhook - Mandate Created`**: Uses `mandateReference` to update loan to `APPROVED`.
+   - Run **`Webhook - Mandate Active`**: Uses `mandateReference` to set loan to `ACTIVE` and saves `authCode`.
+   - *Note*: The folder pre-request script computes and attaches the valid `x-paystack-signature` header automatically using HMAC SHA-512.
+4. **Charge Repayment**: Calls `POST /mandates/charge-repayment` to charge the borrower using their active `authCode`.
+5. **Charge Success Webhook**: Run **`Webhook - Charge Success`** to simulate Paystack's payment confirmation and record the repayment.
+6. **Check Logs**: Run **`Get Webhook Logs`** (`GET /webhooks/logs`) to view all recorded webhook events.
 
----
+### Testing Live Webhooks with Ngrok
 
-## Testing with Postman
+To receive live webhooks from Paystack instead of simulating:
+1. Start an ngrok tunnel: `ngrok http 8888`
+2. Add your ngrok URL (`https://your-subdomain.ngrok-free.app/webhooks/listen`) to your Paystack Dashboard under **Settings -> API Keys & Webhooks**.
 
-Import `postman_collection.json` into Postman:
+## Notes
 
-1. Run `1. Onboard Borrower & Loan`: Automatically saves `borrowerId` into collection variables.
-2. Run `2. Initialize Mandate`: Automatically saves the returned Paystack `reference`.
-3. Test webhooks under the **Webhooks (Paystack)** folder: The pre-request script auto-signs payloads using HMAC SHA-512 with your secret key.
-
----
-
-## Webhook Idempotency
-
-Paystack uses at-least-once delivery and will retry sending webhooks on network timeouts. To handle this safely:
-1. **Event-level deduplication**: Each webhook creates an `eventKey` (`event.data.id` or `${event}_${reference}`). Duplicate requests are acknowledged with `200 OK` immediately without re-running handlers.
-2. **Repayment deduplication**: `charge.success` checks if `reference` already exists in `repayments` before recording.
-
+- **Database**: Uses Lowdb to persist data to `db.json`.
+- **Idempotency**: Webhook events check for previously processed event keys in `db.json` before running to prevent duplicate processing on retries.
