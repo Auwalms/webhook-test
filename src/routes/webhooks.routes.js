@@ -32,18 +32,15 @@ webhooksRouter.post('/listen', async (req, res) => {
 
   const event = JSON.parse(rawBody.toString());
 
-  // Derive unique idempotency event key
   const eventKey = event.data?.id
     ? `event_${event.data.id}`
     : `${event.event}_${event.data?.reference || ''}_${event.data?.authorization_code || ''}`;
 
-  // 1. Check if this exact webhook event was already processed
   if (eventKey && db.webhooks.hasEvent(eventKey)) {
-    console.log(`[Idempotent Skip] Webhook event (${eventKey}) was already processed.`);
+    console.log(`[Duplicate Webhook] Skipping already processed event: ${eventKey}`);
     return res.status(200).json({ status: 'ignored', message: 'Event already processed' });
   }
 
-  // Record this unique webhook event
   await db.webhooks.add({
     id: randomUUID(),
     eventKey,
@@ -53,10 +50,8 @@ webhooksRouter.post('/listen', async (req, res) => {
     receivedAt: new Date().toISOString(),
   });
 
-  // Acknowledge receipt to Paystack immediately
   res.sendStatus(200);
 
-  // 2. Process Business Logic idempotently
   switch (event.event) {
     case 'direct_debit.authorization.created': {
       const { authorization_code, reference, bank, account_name, customer } =
@@ -129,9 +124,8 @@ webhooksRouter.post('/listen', async (req, res) => {
         event.data;
       const authCode = authorization?.authorization_code;
 
-      // Entity-level idempotency guard: prevent duplicate repayment records
       if (reference && db.repayments.has(reference)) {
-        console.log(`[Idempotent Skip] Repayment for reference ${reference} already recorded.`);
+        console.log(`[Duplicate Repayment] Skipping already recorded reference: ${reference}`);
         break;
       }
 
