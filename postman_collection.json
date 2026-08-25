@@ -272,6 +272,25 @@
             "description": "Returns all saved successful webhook events from Lowdb."
           },
           "response": []
+        },
+        {
+          "name": "Get Retry Timing Analysis",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/webhooks/retries",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "webhooks",
+                "retries"
+              ]
+            },
+            "description": "Calculates elapsed time between webhook delivery retries for each eventKey to verify actual Paystack retry intervals."
+          },
+          "response": []
         }
       ]
     }

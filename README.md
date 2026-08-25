@@ -19,6 +19,7 @@ Add your Paystack test secret key to `.env`:
 PAYSTACK_SECRET_KEY=sk_test_xxx
 PAYSTACK_BASE_URL=https://api.paystack.co
 PORT=8888
+FAIL_WEBHOOK_ATTEMPTS=0
 ```
 
 3. Start the server:
@@ -45,8 +46,9 @@ npm run dev
 | `POST` | `/mandates/charge-repayment` | Charge repayment using stored authorization code |
 | `POST` | `/webhooks/listen` | Webhook receiver for Paystack events |
 | `GET` | `/webhooks/logs` | View all saved webhook events |
+| `GET` | `/webhooks/retries` | View retry timing analysis and intervals |
 
-## Testing
+## Testing with Postman
 
 A complete Postman collection is included in `postman_collection.json`. Import it into Postman and run the requests in order:
 
@@ -58,13 +60,34 @@ A complete Postman collection is included in `postman_collection.json`. Import i
    - *Note*: The folder pre-request script computes and attaches the valid `x-paystack-signature` header automatically using HMAC SHA-512.
 4. **Charge Repayment**: Calls `POST /mandates/charge-repayment` to charge the borrower using their active `authCode`.
 5. **Charge Success Webhook**: Run **`Webhook - Charge Success`** to simulate Paystack's payment confirmation and record the repayment.
-6. **Check Logs**: Run **`Get Webhook Logs`** (`GET /webhooks/logs`) to view all recorded webhook events.
+6. **Check Logs**: Run **`Get Webhook Logs`** (`GET /webhooks/logs`) or **`Get Retry Timing Analysis`** (`GET /webhooks/retries`).
 
-### Testing Live Webhooks with Ngrok
+## Testing Webhook Retries & Paystack CLI
 
-To receive live webhooks from Paystack instead of simulating:
-1. Start an ngrok tunnel: `ngrok http 8888`
-2. Add your ngrok URL (`https://your-subdomain.ngrok-free.app/webhooks/listen`) to your Paystack Dashboard under **Settings -> API Keys & Webhooks**.
+To test Paystack's actual webhook retry intervals against documented values:
+
+### 1. Enable Deliberate Failure Toggle
+In your `.env` file (or via the `x-fail-attempts: 2` request header):
+```ini
+FAIL_WEBHOOK_ATTEMPTS=2
+```
+This tells the webhook listener to deliberately respond with `500 Internal Server Error` on the first 2 delivery attempts of any webhook event before succeeding (`200 OK`) on attempt 3.
+
+### 2. Forward Events with Paystack CLI or Tunnel
+Using `paystack-cli`:
+```bash
+paystack listen --forward-to http://localhost:8888/webhooks/listen
+```
+
+### 3. Observe Verified Retry Intervals
+Check the captured retry intervals:
+```bash
+curl http://localhost:8888/webhooks/retries
+```
+
+This returns an analysis showing:
+- Exact timestamps of each failed and successful attempt
+- Actual time elapsed (in seconds) between retry 1, retry 2, etc.
 
 ## Notes
 

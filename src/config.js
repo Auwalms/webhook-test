@@ -4,5 +4,7 @@ export const config = {
     secretKey: process.env.PAYSTACK_SECRET_KEY,
     baseUrl: process.env.PAYSTACK_BASE_URL || 'https://api.paystack.co',
   },
+  webhook: {
+    failAttempts: parseInt(process.env.FAIL_WEBHOOK_ATTEMPTS || '0', 10),
+  },
 };
-

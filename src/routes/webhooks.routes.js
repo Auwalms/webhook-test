@@ -5,8 +5,52 @@ import { db } from '../db.js';
 
 export const webhooksRouter = Router();
 
+const attemptTracker = new Map();
+
 webhooksRouter.get('/logs', (req, res) => {
   return res.json(db.webhooks.getAll());
+});
+
+webhooksRouter.get('/retries', (req, res) => {
+  const logs = db.webhooks.getAll();
+  const grouped = {};
+
+  for (const log of logs) {
+    const key = log.eventKey || log.reference || log.id;
+    if (!grouped[key]) grouped[key] = [];
+    grouped[key].push({
+      attempt: log.attempt || 1,
+      status: log.status || 'SUCCESS',
+      receivedAt: log.receivedAt,
+    });
+  }
+
+  const analysis = Object.entries(grouped).map(([eventKey, attempts]) => {
+    const sorted = attempts.sort(
+      (a, b) => new Date(a.receivedAt) - new Date(b.receivedAt)
+    );
+    const intervals = [];
+
+    for (let i = 1; i < sorted.length; i++) {
+      const diffMs =
+        new Date(sorted[i].receivedAt) - new Date(sorted[i - 1].receivedAt);
+      const diffSec = (diffMs / 1000).toFixed(2);
+      intervals.push({
+        fromAttempt: sorted[i - 1].attempt,
+        toAttempt: sorted[i].attempt,
+        intervalSeconds: Number(diffSec),
+      });
+    }
+
+    return {
+      eventKey,
+      totalAttempts: sorted.length,
+      history: sorted,
+      intervals,
+    };
+  });
+
+  return res.json(analysis);
 });
 
 webhooksRouter.post('/listen', async (req, res) => {
@@ -36,15 +80,55 @@ webhooksRouter.post('/listen', async (req, res) => {
     ? `event_${event.data.id}`
     : `${event.event}_${event.data?.reference || ''}_${event.data?.authorization_code || ''}`;
 
+  // Check failure threshold from env or request header/query
+  const failThreshold =
+    parseInt(req.headers['x-fail-attempts'] || req.query.failAttempts, 10) ||
+    config.webhook.failAttempts ||
+    0;
+
+  const currentAttempt = (attemptTracker.get(eventKey) || 0) + 1;
+  attemptTracker.set(eventKey, currentAttempt);
+
+  // Deliberate failure simulation to observe webhook retry intervals
+  if (currentAttempt <= failThreshold) {
+    console.log(
+      `[Retry Test] Failing attempt #${currentAttempt} for ${eventKey} (threshold: ${failThreshold}) at ${new Date().toISOString()}`
+    );
+
+    await db.webhooks.add({
+      id: randomUUID(),
+      eventKey,
+      event: event.event,
+      attempt: currentAttempt,
+      status: 'FAILED_SIMULATED',
+      reference: event.data?.reference || null,
+      receivedAt: new Date().toISOString(),
+      data: event.data,
+    });
+
+    return res.status(500).json({
+      status: 'error',
+      message: `Simulated failure for retry timing observation (attempt ${currentAttempt} of ${failThreshold})`,
+      attempt: currentAttempt,
+      timestamp: new Date().toISOString(),
+    });
+  }
+
+  // Idempotency check: if this event was already processed successfully, acknowledge and skip
   if (eventKey && db.webhooks.hasEvent(eventKey)) {
-    console.log(`[Duplicate Webhook] Skipping already processed event: ${eventKey}`);
-    return res.status(200).json({ status: 'ignored', message: 'Event already processed' });
+    const existing = db.webhooks.getByEventKey(eventKey);
+    if (existing && existing.status === 'SUCCESS') {
+      console.log(`[Duplicate Webhook] Skipping already processed event: ${eventKey}`);
+      return res.status(200).json({ status: 'ignored', message: 'Event already processed' });
+    }
   }
 
   await db.webhooks.add({
     id: randomUUID(),
     eventKey,
     event: event.event,
+    attempt: currentAttempt,
+    status: 'SUCCESS',
     reference: event.data?.reference || null,
     data: event.data,
     receivedAt: new Date().toISOString(),
@@ -125,7 +209,9 @@ webhooksRouter.post('/listen', async (req, res) => {
       const authCode = authorization?.authorization_code;
 
       if (reference && db.repayments.has(reference)) {
-        console.log(`[Duplicate Repayment] Skipping already recorded reference: ${reference}`);
+        console.log(
+          `[Duplicate Repayment] Skipping already recorded reference: ${reference}`
+        );
         break;
       }
 
