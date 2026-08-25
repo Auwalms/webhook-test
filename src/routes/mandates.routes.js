@@ -4,6 +4,7 @@ import { config } from '../config.js';
 import { db } from '../db.js';
 
 export const mandatesRouter = Router();
+const baseUrl = config.paystack.baseUrl;
 
 mandatesRouter.post('/initialize', async (req, res) => {
   const { borrowerId, callbackUrl } = req.body;
@@ -14,7 +15,7 @@ mandatesRouter.post('/initialize', async (req, res) => {
   }
 
   try {
-    const response = await fetch(`${config.paystack.baseUrl}/customer/authorization/initialize`, {
+    const response = await fetch(`${baseUrl}/customer/authorization/initialize`, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${config.paystack.secretKey}`,
@@ -22,7 +23,7 @@ mandatesRouter.post('/initialize', async (req, res) => {
       },
       body: JSON.stringify({
         email: borrower.email,
-        channels: ['direct_debit'],
+        channel: 'direct_debit',
         callback_url: callbackUrl ?? 'https://google.com',
         account: {
         number: borrower.bankAccountNumber,
@@ -32,15 +33,19 @@ mandatesRouter.post('/initialize', async (req, res) => {
         state: borrower.address.state,
         city: borrower.address.city,
         street: borrower.address.street
-      },metadata: {
-        borrowerId: borrower.id,
       }
       }),
     });
 
     const data = await response.json();
-    borrower.set("referenece", data.data.reference);
-    return res.status(response.status).json(data);
+    if(!response.ok) {
+      return res.status(response.status).json({ error: 'Failed to initialize mandate' });
+    };
+      
+      console.log(data);
+      borrower.reference = data.data.reference;
+      return res.status(response.status).json(data);
+   
   } catch (error) {
     return res.status(500).json({ error: error.message });
   }
@@ -56,7 +61,7 @@ mandatesRouter.post('/charge-repayment', async (req, res) => {
 
   try {
     const reference = `repay_${randomUUID()}`;
-    const response = await fetch(`${config.paystack.baseUrl}/transaction/charge_authorization`, {
+    const response = await fetch(`${baseUrl}/transaction/charge_authorization`, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${config.paystack.secretKey}`,

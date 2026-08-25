@@ -5,7 +5,7 @@ import { db } from '../db.js';
 
 export const webhooksRouter = Router();
 
-webhooksRouter.post('/webhook', (req, res) => {
+webhooksRouter.post('/listen', (req, res) => {
   const paystackSignature = req.headers['x-paystack-signature'];
   const rawBody = req.body;
 

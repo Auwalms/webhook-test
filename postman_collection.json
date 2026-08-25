@@ -1,0 +1,241 @@
+{
+  "info": {
+    "_postman_id": "b9f93976-a083-4889-bb0d-587201e74f83",
+    "name": "Lending Engine & Paystack Webhooks",
+    "description": "Postman Collection for testing the Lending Engine API including Loan Onboarding, Mandate Initialization/Repayment, and signed Paystack Webhooks.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8888",
+      "type": "string"
+    },
+    {
+      "key": "borrowerId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "secretKey",
+      "value": "paystack_secret_key",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "Loans",
+      "item": [
+        {
+          "name": "1. Onboard Borrower & Loan",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const response = pm.response.json();",
+                  "if (response.borrower && response.borrower.id) {",
+                  "    pm.collectionVariables.set('borrowerId', response.borrower.id);",
+                  "    console.log('Saved borrowerId:', response.borrower.id);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"borrower@example.com\",\n  \"firstName\": \"John\",\n  \"lastName\": \"Doe\",\n  \"phone\": \"+2348012345678\",\n  \"loanAmount\": 50000,\n  \"address\": {\n    \"state\": \"Lagos\",\n    \"city\": \"Ikeja\",\n    \"street\": \"123 Tech Street\"\n  },\n  \"bankAccountNumber\": \"0123456789\",\n  \"bankCode\": \"058\",\n  \"debitAmount\": 5000,\n  \"debitFrequency\": \"monthly\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/loans/onboard",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "loans",
+                "onboard"
+              ]
+            },
+            "description": "Onboards a new borrower and creates a loan in PENDING_MANDATE status. Automatically captures `borrowerId` into collection variables."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Mandates",
+      "item": [
+        {
+          "name": "2. Initialize Mandate",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"borrowerId\": \"{{borrowerId}}\",\n  \"callbackUrl\": \"https://google.com\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/mandates/initialize",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "mandates",
+                "initialize"
+              ]
+            },
+            "description": "Initializes direct debit authorization via Paystack for the onboarded borrower."
+          },
+          "response": []
+        },
+        {
+          "name": "3. Charge Repayment",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"borrowerId\": \"{{borrowerId}}\",\n  \"amount\": 5000\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/mandates/charge-repayment",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "mandates",
+                "charge-repayment"
+              ]
+            },
+            "description": "Charges repayment using the borrower's active authorization code."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Webhooks (Paystack)",
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "exec": [
+              "// Auto-calculate Paystack x-paystack-signature using HMAC SHA512",
+              "const secret = pm.collectionVariables.get('secretKey') || 'paystack_secret_key';",
+              "const rawBody = pm.request.body.raw || '';",
+              "const hash = CryptoJS.HmacSHA512(rawBody, secret).toString(CryptoJS.enc.Hex);",
+              "pm.request.headers.upsert({ key: 'x-paystack-signature', value: hash });"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "item": [
+        {
+          "name": "Webhook - Mandate Created",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"event\": \"direct_debit.authorization.created\",\n  \"data\": {\n    \"authorization_code\": \"AUTH_test_mandate_123\",\n    \"metadata\": {\n      \"borrowerId\": \"{{borrowerId}}\"\n    }\n  }\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/webhooks/listen",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "webhooks",
+                "webhook"
+              ]
+            },
+            "description": "Simulates Paystack `direct_debit.authorization.created` webhook. Signs payload automatically."
+          },
+          "response": []
+        },
+        {
+          "name": "Webhook - Mandate Active",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"event\": \"direct_debit.authorization.active\",\n  \"data\": {\n    \"authorization_code\": \"AUTH_test_mandate_123\",\n    \"metadata\": {\n      \"borrowerId\": \"{{borrowerId}}\"\n    }\n  }\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/webhooks/listen",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "webhooks",
+                "webhook"
+              ]
+            },
+            "description": "Simulates Paystack `direct_debit.authorization.active` webhook. Updates loan status to ACTIVE."
+          },
+          "response": []
+        },
+        {
+          "name": "Webhook - Charge Success",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"event\": \"charge.success\",\n  \"data\": {\n    \"reference\": \"repay_ref_test_001\",\n    \"amount\": 500000,\n    \"paid_at\": \"2026-08-25T19:00:00.000Z\",\n    \"authorization\": {\n      \"authorization_code\": \"AUTH_test_mandate_123\",\n      \"reusable\": true,\n      \"bank\": \"Guaranty Trust Bank\"\n    },\n    \"metadata\": {\n      \"borrowerId\": \"{{borrowerId}}\"\n    }\n  }\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/webhooks/listen",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "webhooks",
+                "webhook"
+              ]
+            },
+            "description": "Simulates Paystack `charge.success` webhook and logs the repayment."
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}
+
