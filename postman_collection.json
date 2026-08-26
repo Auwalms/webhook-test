@@ -302,13 +302,14 @@
             "method": "POST",
             "header": [],
             "url": {
-              "raw": "{{baseUrl}}/webhooks/replay-latest",
+              "raw": "{{baseUrl}}/webhooks/replay/latest",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
                 "webhooks",
-                "replay-latest"
+                "replay",
+                "latest"
               ]
             },
             "description": "Locally re-runs the most recently received webhook payload through the processing pipeline without needing external Paystack re-triggering."
