@@ -111,12 +111,28 @@ export const db = {
       (lowdb.data.webhooks || []).some((webhook) => webhook.eventKey === eventKey),
     getByEventKey: (eventKey) =>
       (lowdb.data.webhooks || []).find((webhook) => webhook.eventKey === eventKey),
+    getByIdOrEventKey: (idOrKey) =>
+      (lowdb.data.webhooks || []).find(
+        (webhook) => webhook.id === idOrKey || webhook.eventKey === idOrKey
+      ),
+    getLatest: () => {
+      const wh = lowdb.data.webhooks || [];
+      return wh.length > 0 ? wh[wh.length - 1] : null;
+    },
     add: async (webhookData) => {
       if (!lowdb.data.webhooks) {
         lowdb.data.webhooks = [];
       }
       lowdb.data.webhooks.push(webhookData);
       await lowdb.write();
+    },
+    logReplay: async (id, replayInfo) => {
+      const item = (lowdb.data.webhooks || []).find((w) => w.id === id);
+      if (item) {
+        item.replays = item.replays || [];
+        item.replays.push(replayInfo);
+        await lowdb.write();
+      }
     },
   },
 };
