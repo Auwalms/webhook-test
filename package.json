@@ -12,6 +12,7 @@
   "main": "src/main.js",
   "scripts": {
     "start": "node --env-file=.env src/main.js",
+    "start": "node src/main.js",
     "dev": "node --watch-path=src --watch --env-file=.env src/main.js"
   },
   "dependencies": {

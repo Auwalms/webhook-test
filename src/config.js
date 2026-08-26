@@ -1,3 +1,9 @@
+try {
+  process.loadEnvFile?.();
+} catch {
+  // .env file not present in production (Railway/Render injects variables directly into process.env)
+}
+
 export const config = {
   port: process.env.PORT || 8888,
   paystack: {
