@@ -1,6 +1,9 @@
 import { Router } from 'express';
 import { randomUUID } from 'node:crypto';
 import { db } from '../db.js';
+import { createRequire } from 'module';
+
+const require = createRequire(import.meta.url);
 
 export const loansRouter = Router();
 

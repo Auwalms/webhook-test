@@ -4,6 +4,8 @@ A minimal Express service that exercises Paystack's Direct Debit APIs: mandate s
 
 It surfaced a real, reproducible bug in `paystack-cli`'s local webhook testing flow along the way. That bug is now the subject of [PR #24](https://github.com/PaystackOSS/paystack-cli/pull/24) against the official CLI, open and awaiting review.
 
+**Live URL:** [https://webhook-test-production-c88d.up.railway.app](https://webhook-test-production-c88d.up.railway.app)
+
 ## Why this gap, over the alternatives
 
 The full assessment audited Documentation, API Reference, and SDK/CLI tooling, and ranked several gaps. This build addresses the CLI's broken local webhook testing specifically because it's the only ranked gap directly fixable with third-party code:
