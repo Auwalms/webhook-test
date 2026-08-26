@@ -7,6 +7,155 @@ export const webhooksRouter = Router();
 
 const attemptTracker = new Map();
 
+export async function handleWebhookEvent(event, { isReplay = false } = {}) {
+  switch (event.event) {
+    case 'direct_debit.authorization.created': {
+      const { authorization_code, reference, bank, account_name, customer } =
+        event.data;
+
+      const borrower = db.borrowers.findBorrower({
+        reference,
+        authCode: authorization_code,
+        email: customer?.email,
+      });
+
+      if (borrower) {
+        borrower.authCode = authorization_code;
+        if (bank) borrower.mandateBank = bank;
+        if (account_name) borrower.accountName = account_name;
+        if (customer?.code) borrower.customerCode = customer.code;
+
+        const loan = db.loans.get(borrower.id);
+        if (loan && loan.status !== 'APPROVED') {
+          loan.status = 'APPROVED';
+        }
+
+        await db.write();
+        console.log(
+          `[${isReplay ? 'Replay ' : ''}Mandate Created] Borrower: ${borrower.id}, Reference: ${reference}, Code: ${authorization_code}`
+        );
+
+        return {
+          success: true,
+          action: 'mandate_created',
+          borrowerId: borrower.id,
+          loanId: loan?.id,
+          loanStatus: loan?.status,
+        };
+      } else {
+        console.warn(
+          `[${isReplay ? 'Replay ' : ''}Mandate Created] No matching borrower found for reference: ${reference}`
+        );
+        return {
+          success: false,
+          error: `No matching borrower found for reference: ${reference}`,
+        };
+      }
+    }
+
+    case 'direct_debit.authorization.active': {
+      const { authorization_code, reference, bank, account_name, customer } =
+        event.data;
+
+      const borrower = db.borrowers.findBorrower({
+        reference,
+        authCode: authorization_code,
+        email: customer?.email,
+      });
+
+      if (borrower) {
+        borrower.authCode = authorization_code;
+        if (bank) borrower.mandateBank = bank;
+        if (account_name) borrower.accountName = account_name;
+        if (customer?.code) borrower.customerCode = customer.code;
+
+        const loan = db.loans.get(borrower.id);
+        if (loan && loan.status !== 'ACTIVE') {
+          loan.status = 'ACTIVE';
+        }
+
+        await db.write();
+        console.log(
+          `[${isReplay ? 'Replay ' : ''}Mandate Activated] Borrower: ${borrower.id}, Reference: ${reference}, Code: ${authorization_code}`
+        );
+
+        return {
+          success: true,
+          action: 'mandate_activated',
+          borrowerId: borrower.id,
+          loanId: loan?.id,
+          loanStatus: loan?.status,
+        };
+      } else {
+        console.warn(
+          `[${isReplay ? 'Replay ' : ''}Mandate Activated] No matching borrower found for reference: ${reference}`
+        );
+        return {
+          success: false,
+          error: `No matching borrower found for reference: ${reference}`,
+        };
+      }
+    }
+
+    case 'charge.success': {
+      const { authorization, reference, amount, paid_at, customer } =
+        event.data;
+      const authCode = authorization?.authorization_code;
+
+      if (!isReplay && reference && db.repayments.has(reference)) {
+        console.log(
+          `[Duplicate Repayment] Skipping already recorded reference: ${reference}`
+        );
+        return {
+          success: true,
+          action: 'repayment_already_recorded',
+          reference,
+        };
+      }
+
+      const borrower = db.borrowers.findBorrower({
+        authCode,
+        email: customer?.email,
+      });
+
+      if (borrower) {
+        if (authCode && authorization?.reusable) {
+          borrower.authCode = authCode;
+          borrower.mandateBank = authorization.bank;
+          await db.write();
+        }
+        console.log(
+          `[${isReplay ? 'Replay ' : ''}Repayment Successful] Borrower: ${borrower.id}, Reference: ${reference}, Amount: ${amount / 100}`
+        );
+      }
+
+      await db.repayments.set(reference, {
+        reference,
+        borrowerId: borrower?.id || null,
+        amount: amount / 100,
+        status: 'PAID',
+        processedAt: paid_at,
+      });
+
+      return {
+        success: true,
+        action: 'repayment_recorded',
+        reference,
+        borrowerId: borrower?.id,
+        amount: amount / 100,
+      };
+    }
+
+    default:
+      console.log(`[Unhandled Event] ${event.event}`);
+      return {
+        success: false,
+        action: 'unhandled_event',
+        event: event.event,
+      };
+  }
+}
+
 webhooksRouter.get('/logs', (req, res) => {
   return res.json(db.webhooks.getAll());
 });
@@ -53,6 +202,67 @@ webhooksRouter.get('/retries', (req, res) => {
   return res.json(analysis);
 });
 
+webhooksRouter.post('/replay/:id', async (req, res) => {
+  const { id } = req.params;
+  const webhookRecord = db.webhooks.getByIdOrEventKey(id);
+
+  if (!webhookRecord) {
+    return res.status(404).json({
+      error: `Webhook record with ID or eventKey '${id}' not found.`,
+    });
+  }
+
+  const result = await handleWebhookEvent(
+    { event: webhookRecord.event, data: webhookRecord.data },
+    { isReplay: true }
+  );
+
+  const replayLog = {
+    replayedAt: new Date().toISOString(),
+    result,
+  };
+
+  await db.webhooks.logReplay(webhookRecord.id, replayLog);
+
+  return res.json({
+    message: 'Webhook replayed successfully',
+    event: webhookRecord.event,
+    eventId: webhookRecord.id,
+    eventKey: webhookRecord.eventKey,
+    result,
+  });
+});
+
+webhooksRouter.post('/replay-latest', async (req, res) => {
+  const webhookRecord = db.webhooks.getLatest();
+
+  if (!webhookRecord) {
+    return res.status(404).json({
+      error: 'No webhook records found to replay.',
+    });
+  }
+
+  const result = await handleWebhookEvent(
+    { event: webhookRecord.event, data: webhookRecord.data },
+    { isReplay: true }
+  );
+
+  const replayLog = {
+    replayedAt: new Date().toISOString(),
+    result,
+  };
+
+  await db.webhooks.logReplay(webhookRecord.id, replayLog);
+
+  return res.json({
+    message: 'Latest webhook replayed successfully',
+    event: webhookRecord.event,
+    eventId: webhookRecord.id,
+    eventKey: webhookRecord.eventKey,
+    result,
+  });
+});
+
 webhooksRouter.post('/listen', async (req, res) => {
   const paystackSignature = req.headers['x-paystack-signature'];
   const rawBody = req.body;
@@ -80,7 +290,6 @@ webhooksRouter.post('/listen', async (req, res) => {
     ? `event_${event.data.id}`
     : `${event.event}_${event.data?.reference || ''}_${event.data?.authorization_code || ''}`;
 
-  // Check failure threshold from env or request header/query
   const failThreshold =
     parseInt(req.headers['x-fail-attempts'] || req.query.failAttempts, 10) ||
     config.webhook.failAttempts ||
@@ -89,7 +298,6 @@ webhooksRouter.post('/listen', async (req, res) => {
   const currentAttempt = (attemptTracker.get(eventKey) || 0) + 1;
   attemptTracker.set(eventKey, currentAttempt);
 
-  // Deliberate failure simulation to observe webhook retry intervals
   if (currentAttempt <= failThreshold) {
     console.log(
       `[Retry Test] Failing attempt #${currentAttempt} for ${eventKey} (threshold: ${failThreshold}) at ${new Date().toISOString()}`
@@ -114,7 +322,6 @@ webhooksRouter.post('/listen', async (req, res) => {
     });
   }
 
-  // Idempotency check: if this event was already processed successfully, acknowledge and skip
   if (eventKey && db.webhooks.hasEvent(eventKey)) {
     const existing = db.webhooks.getByEventKey(eventKey);
     if (existing && existing.status === 'SUCCESS') {
@@ -136,112 +343,5 @@ webhooksRouter.post('/listen', async (req, res) => {
 
   res.sendStatus(200);
 
-  switch (event.event) {
-    case 'direct_debit.authorization.created': {
-      const { authorization_code, reference, bank, account_name, customer } =
-        event.data;
-
-      const borrower = db.borrowers.findBorrower({
-        reference,
-        authCode: authorization_code,
-        email: customer?.email,
-      });
-
-      if (borrower) {
-        borrower.authCode = authorization_code;
-        if (bank) borrower.mandateBank = bank;
-        if (account_name) borrower.accountName = account_name;
-        if (customer?.code) borrower.customerCode = customer.code;
-
-        const loan = db.loans.get(borrower.id);
-        if (loan && loan.status !== 'APPROVED') {
-          loan.status = 'APPROVED';
-        }
-
-        await db.write();
-        console.log(
-          `[Mandate Created] Borrower: ${borrower.id}, Reference: ${reference}, Code: ${authorization_code}`
-        );
-      } else {
-        console.warn(
-          `[Mandate Created] No matching borrower found for reference: ${reference}`
-        );
-      }
-      break;
-    }
-
-    case 'direct_debit.authorization.active': {
-      const { authorization_code, reference, bank, account_name, customer } =
-        event.data;
-
-      const borrower = db.borrowers.findBorrower({
-        reference,
-        authCode: authorization_code,
-        email: customer?.email,
-      });
-
-      if (borrower) {
-        borrower.authCode = authorization_code;
-        if (bank) borrower.mandateBank = bank;
-        if (account_name) borrower.accountName = account_name;
-        if (customer?.code) borrower.customerCode = customer.code;
-
-        const loan = db.loans.get(borrower.id);
-        if (loan && loan.status !== 'ACTIVE') {
-          loan.status = 'ACTIVE';
-        }
-
-        await db.write();
-        console.log(
-          `[Mandate Activated] Borrower: ${borrower.id}, Reference: ${reference}, Code: ${authorization_code}`
-        );
-      } else {
-        console.warn(
-          `[Mandate Activated] No matching borrower found for reference: ${reference}`
-        );
-      }
-      break;
-    }
-
-    case 'charge.success': {
-      const { authorization, reference, amount, paid_at, customer } =
-        event.data;
-      const authCode = authorization?.authorization_code;
-
-      if (reference && db.repayments.has(reference)) {
-        console.log(
-          `[Duplicate Repayment] Skipping already recorded reference: ${reference}`
-        );
-        break;
-      }
-
-      const borrower = db.borrowers.findBorrower({
-        authCode,
-        email: customer?.email,
-      });
-
-      if (borrower) {
-        if (authCode && authorization?.reusable) {
-          borrower.authCode = authCode;
-          borrower.mandateBank = authorization.bank;
-          await db.write();
-        }
-        console.log(
-          `[Repayment Successful] Borrower: ${borrower.id}, Reference: ${reference}, Amount: ${amount / 100}`
-        );
-      }
-
-      await db.repayments.set(reference, {
-        reference,
-        borrowerId: borrower?.id || null,
-        amount: amount / 100,
-        status: 'PAID',
-        processedAt: paid_at,
-      });
-      break;
-    }
-
-    default:
-      console.log(`[Unhandled Event] ${event.event}`);
-  }
+  await handleWebhookEvent(event);
 });

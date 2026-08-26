@@ -36,6 +36,7 @@ npm run dev
    - `direct_debit.authorization.active` updates loan status to `ACTIVE` and saves the reusable `authCode`.
    - `charge.success` records the repayment.
 4. **Charge Repayment**: `POST /mandates/charge-repayment` triggers a debit using the customer's stored `authCode`.
+5. **Local Replay**: `POST /webhooks/replay/:id` or `POST /webhooks/replay-latest` re-executes stored payloads through the pipeline for debugging.
 
 ## Endpoints
 
@@ -47,6 +48,8 @@ npm run dev
 | `POST` | `/webhooks/listen` | Webhook receiver for Paystack events |
 | `GET` | `/webhooks/logs` | View all saved webhook events |
 | `GET` | `/webhooks/retries` | View retry timing analysis and intervals |
+| `POST` | `/webhooks/replay/:id` | Re-run a specific saved webhook event through the processing pipeline |
+| `POST` | `/webhooks/replay-latest` | Re-run the most recent saved webhook event |
 
 ## Testing with Postman
 
@@ -61,6 +64,21 @@ A complete Postman collection is included in `postman_collection.json`. Import i
 4. **Charge Repayment**: Calls `POST /mandates/charge-repayment` to charge the borrower using their active `authCode`.
 5. **Charge Success Webhook**: Run **`Webhook - Charge Success`** to simulate Paystack's payment confirmation and record the repayment.
 6. **Check Logs**: Run **`Get Webhook Logs`** (`GET /webhooks/logs`) or **`Get Retry Timing Analysis`** (`GET /webhooks/retries`).
+7. **Replay Events**: Run **`Replay Latest Webhook`** or **`Replay Webhook by ID`** to reprocess stored payloads.
+
+## Local Webhook Replay (Developer Self-Service)
+
+While external Paystack retriggering requires Paystack internal server actions, local replay gives developers a self-service way to re-run captured webhook events after fixing application bugs or updating state logic:
+
+```bash
+# Replay the most recently received webhook
+curl -X POST http://localhost:8888/webhooks/replay-latest
+
+# Replay a specific webhook event by ID
+curl -X POST http://localhost:8888/webhooks/replay/<WEBHOOK_ID>
+```
+
+Each replay re-executes the handler, updates the borrower and loan state if needed, and records a replay audit entry under the webhook record in `db.json`.
 
 ## Testing Webhook Retries & Paystack CLI
 

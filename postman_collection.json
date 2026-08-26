@@ -2,7 +2,7 @@
   "info": {
     "_postman_id": "b9f93976-a083-4889-bb0d-587201e74f83",
     "name": "Lending Engine & Paystack Webhooks",
-    "description": "Postman Collection for testing the Lending Engine API including Loan Onboarding, Mandate Initialization/Repayment, and signed Paystack Webhooks with reference matching.",
+    "description": "Postman Collection for testing the Lending Engine API including Loan Onboarding, Mandate Initialization/Repayment, signed Paystack Webhooks, and Webhook Replay.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -24,6 +24,11 @@
     {
       "key": "secretKey",
       "value": "paystack_secret_key",
+      "type": "string"
+    },
+    {
+      "key": "webhookId",
+      "value": "",
       "type": "string"
     }
   ],
@@ -256,6 +261,24 @@
         },
         {
           "name": "Get Webhook Logs",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const response = pm.response.json();",
+                  "if (Array.isArray(response) && response.length > 0) {",
+                  "    const latest = response[response.length - 1];",
+                  "    if (latest.id) {",
+                  "        pm.collectionVariables.set('webhookId', latest.id);",
+                  "        console.log('Saved webhookId:', latest.id);",
+                  "    }",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
           "request": {
             "method": "GET",
             "header": [],
@@ -269,7 +292,46 @@
                 "logs"
               ]
             },
-            "description": "Returns all saved successful webhook events from Lowdb."
+            "description": "Returns all saved webhook events from Lowdb. Automatically captures the latest `webhookId` for replay testing."
+          },
+          "response": []
+        },
+        {
+          "name": "Replay Latest Webhook",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/webhooks/replay-latest",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "webhooks",
+                "replay-latest"
+              ]
+            },
+            "description": "Locally re-runs the most recently received webhook payload through the processing pipeline without needing external Paystack re-triggering."
+          },
+          "response": []
+        },
+        {
+          "name": "Replay Webhook by ID",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/webhooks/replay/{{webhookId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "webhooks",
+                "replay",
+                "{{webhookId}}"
+              ]
+            },
+            "description": "Re-runs a specific stored webhook payload by its ID or eventKey through the processing pipeline."
           },
           "response": []
         },
