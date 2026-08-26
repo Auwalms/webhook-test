@@ -202,38 +202,7 @@ webhooksRouter.get('/retries', (req, res) => {
   return res.json(analysis);
 });
 
-webhooksRouter.post('/replay/:id', async (req, res) => {
-  const { id } = req.params;
-  const webhookRecord = db.webhooks.getByIdOrEventKey(id);
-
-  if (!webhookRecord) {
-    return res.status(404).json({
-      error: `Webhook record with ID or eventKey '${id}' not found.`,
-    });
-  }
-
-  const result = await handleWebhookEvent(
-    { event: webhookRecord.event, data: webhookRecord.data },
-    { isReplay: true }
-  );
-
-  const replayLog = {
-    replayedAt: new Date().toISOString(),
-    result,
-  };
-
-  await db.webhooks.logReplay(webhookRecord.id, replayLog);
-
-  return res.json({
-    message: 'Webhook replayed successfully',
-    event: webhookRecord.event,
-    eventId: webhookRecord.id,
-    eventKey: webhookRecord.eventKey,
-    result,
-  });
-});
-
-webhooksRouter.post('/replay-latest', async (req, res) => {
+webhooksRouter.post('/replay/latest', async (req, res) => {
   const webhookRecord = db.webhooks.getLatest();
 
   if (!webhookRecord) {
@@ -256,6 +225,40 @@ webhooksRouter.post('/replay-latest', async (req, res) => {
 
   return res.json({
     message: 'Latest webhook replayed successfully',
+    event: webhookRecord.event,
+    eventId: webhookRecord.id,
+    eventKey: webhookRecord.eventKey,
+    result,
+  });
+});
+
+webhooksRouter.post('/replay/:id', async (req, res) => {
+  const { id } = req.params;
+  const webhookRecord =
+    id === 'latest'
+      ? db.webhooks.getLatest()
+      : db.webhooks.getByIdOrEventKey(id);
+
+  if (!webhookRecord) {
+    return res.status(404).json({
+      error: `Webhook record with ID or eventKey '${id}' not found.`,
+    });
+  }
+
+  const result = await handleWebhookEvent(
+    { event: webhookRecord.event, data: webhookRecord.data },
+    { isReplay: true }
+  );
+
+  const replayLog = {
+    replayedAt: new Date().toISOString(),
+    result,
+  };
+
+  await db.webhooks.logReplay(webhookRecord.id, replayLog);
+
+  return res.json({
+    message: 'Webhook replayed successfully',
     event: webhookRecord.event,
     eventId: webhookRecord.id,
     eventKey: webhookRecord.eventKey,
